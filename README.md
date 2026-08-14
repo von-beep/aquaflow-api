@@ -78,11 +78,9 @@ curl http://localhost:3001/health
 # { "ok": true, "db": true }
 ```
 
-After install, Hostinger runs **`npm start`**, which now applies SQL migrations then boots the API:
+On every API boot, pending `migrations/*.sql` files are applied automatically (then skipped on later starts). Hostinger can start `dist/index.js` directly — migrations still run.
 
-```text
-node dist/db/migrate.js && node dist/index.js
-```
+Manual: `npm run migrate` (dev) or `npm run migrate:prod`.
 
 Ensure `DATABASE_URL` (or `DB_*`) is set and MySQL is reachable (often `localhost` on Hostinger). Logs should show `apply` / `skip` migration lines, then `Aquaflow-api listening…`.
 

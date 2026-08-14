@@ -23,7 +23,8 @@ async function appliedIds(): Promise<Set<string>> {
   return new Set((rows as { id: string }[]).map((r) => r.id))
 }
 
-async function migrate(): Promise<void> {
+/** Apply pending migrations/*.sql. Safe to call on every boot (skips already applied). */
+export async function runMigrations(): Promise<void> {
   await waitForDb()
   await ensureMigrationsTable()
   const applied = await appliedIds()
@@ -44,15 +45,27 @@ async function migrate(): Promise<void> {
     await pool.query('INSERT INTO schema_migrations (id) VALUES (?)', [file])
     console.log(`apply ${file}`)
   }
+  console.log('Migrations complete')
 }
 
-migrate()
-  .then(async () => {
-    console.log('Migrations complete')
-    await closePool()
-  })
-  .catch(async (err: unknown) => {
-    console.error(err)
-    await closePool()
-    process.exit(1)
-  })
+function isExecutedDirectly(): boolean {
+  const entry = process.argv[1]
+  if (!entry) return false
+  try {
+    return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(entry)
+  } catch {
+    return false
+  }
+}
+
+if (isExecutedDirectly()) {
+  runMigrations()
+    .then(async () => {
+      await closePool()
+    })
+    .catch(async (err: unknown) => {
+      console.error(err)
+      await closePool()
+      process.exit(1)
+    })
+}
