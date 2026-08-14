@@ -87,9 +87,11 @@ Use **Node.js Web App** (not generic “website upload”). After `npm install`,
 | Framework | `express` or `Other` |
 | Node.js | **20** (or 22) |
 | Package manager | `npm` |
-| **Build command / script** | `build` (runs `tsc`) |
+| **Build command / script** | `build` (or leave blank — `postinstall` also runs `tsc`) |
 | **Output directory** | `dist` |
-| **Entry file** | `dist/index.js` (or `server.js`) |
+| **Entry file** | `dist/index.js` |
+
+If logs stop after `npm install`, open **Build settings** and set the build script to **`build`**, then Redeploy. `postinstall` also compiles TypeScript right after install so `dist/index.js` exists.
 
 Set env vars in hPanel: `DATABASE_URL`, `JWT_SECRET`, `FRONTEND_URL`, `PORT` (Hostinger may inject port — read `process.env.PORT`).
 
