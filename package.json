@@ -8,8 +8,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "postinstall": "npm run build",
-    "start": "node dist/index.js",
+    "start": "node dist/db/migrate.js && node dist/index.js",
     "migrate": "tsx src/db/migrate.ts",
+    "migrate:prod": "node dist/db/migrate.js",
     "seed": "tsx src/db/seed.ts",
     "test": "vitest run",
     "test:watch": "vitest"

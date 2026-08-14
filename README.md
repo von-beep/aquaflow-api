@@ -78,6 +78,14 @@ curl http://localhost:3001/health
 # { "ok": true, "db": true }
 ```
 
+After install, Hostinger runs **`npm start`**, which now applies SQL migrations then boots the API:
+
+```text
+node dist/db/migrate.js && node dist/index.js
+```
+
+Ensure `DATABASE_URL` (or `DB_*`) is set and MySQL is reachable (often `localhost` on Hostinger). Logs should show `apply` / `skip` migration lines, then `Aquaflow-api listening…`.
+
 ## Hostinger Node.js Web App
 
 Use **Node.js Web App** (not generic “website upload”). After `npm install`, Hostinger must run the **build** script or `dist/` will be missing and deploy stalls.
