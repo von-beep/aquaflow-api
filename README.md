@@ -78,6 +78,27 @@ curl http://localhost:3001/health
 # { "ok": true, "db": true }
 ```
 
+## Hostinger Node.js Web App
+
+Use **Node.js Web App** (not generic “website upload”). After `npm install`, Hostinger must run the **build** script or `dist/` will be missing and deploy stalls.
+
+| Setting | Value |
+|---------|--------|
+| Framework | `express` or `Other` |
+| Node.js | **20** (or 22) |
+| Package manager | `npm` |
+| **Build command / script** | `build` (runs `tsc`) |
+| **Output directory** | `dist` |
+| **Entry file** | `dist/index.js` (or `server.js`) |
+
+Set env vars in hPanel: `DATABASE_URL`, `JWT_SECRET`, `FRONTEND_URL`, `PORT` (Hostinger may inject port — read `process.env.PORT`).
+
+Run migrations against Hostinger MySQL from your PC (with production `DATABASE_URL` in `.env`):
+
+```bash
+npm run migrate
+```
+
 ## Scripts
 
 | Script | Description |
