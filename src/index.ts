@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import cors from 'cors'
 import express from 'express'
+import { ensurePlatformAdmin } from './db/ensurePlatformAdmin.js'
 import { runMigrations } from './db/migrate.js'
 import { adminRouter } from './routes/admin.js'
 import { apiRouter } from './routes/api.js'
@@ -79,6 +80,7 @@ export function createApp() {
 async function main(): Promise<void> {
   // Hostinger often starts entry file directly (skips npm start) — migrate on boot.
   await runMigrations()
+  await ensurePlatformAdmin()
   const app = createApp()
   app.listen(port, () => {
     console.log(`Aquaflow-api listening on http://localhost:${port}`)

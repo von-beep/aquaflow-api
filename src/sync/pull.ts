@@ -77,6 +77,24 @@ function mapPayment(r: RowDataPacket): Record<string, unknown> {
 function mapSettings(r: RowDataPacket): Record<string, unknown> {
   const lat = r.lat == null || r.lat === '' ? null : Number(r.lat)
   const lng = r.lng == null || r.lng === '' ? null : Number(r.lng)
+  const openRaw = r.open_time
+  const closeRaw = r.close_time
+  const openTime =
+    openRaw == null || openRaw === ''
+      ? null
+      : typeof openRaw === 'string'
+        ? openRaw.slice(0, 5)
+        : openRaw instanceof Date
+          ? `${String(openRaw.getUTCHours()).padStart(2, '0')}:${String(openRaw.getUTCMinutes()).padStart(2, '0')}`
+          : null
+  const closeTime =
+    closeRaw == null || closeRaw === ''
+      ? null
+      : typeof closeRaw === 'string'
+        ? closeRaw.slice(0, 5)
+        : closeRaw instanceof Date
+          ? `${String(closeRaw.getUTCHours()).padStart(2, '0')}:${String(closeRaw.getUTCMinutes()).padStart(2, '0')}`
+          : null
   return {
     stationName: r.station_name,
     owner: r.owner,
@@ -85,6 +103,8 @@ function mapSettings(r: RowDataPacket): Record<string, unknown> {
     lat: Number.isFinite(lat as number) ? lat : null,
     lng: Number.isFinite(lng as number) ? lng : null,
     currency: r.currency,
+    openTime,
+    closeTime,
   }
 }
 
@@ -156,7 +176,8 @@ export async function pullChanges(
   for (const collection of SINGLETON_COLLECTIONS) {
     if (collection === 'settings') {
       const [rows] = await pool.query<RowDataPacket[]>(
-        `SELECT station_id, station_name, owner, phone, address, lat, lng, currency, updated_at
+        `SELECT station_id, station_name, owner, phone, address, lat, lng, currency,
+                open_time, close_time, updated_at
          FROM settings WHERE station_id = ? AND updated_at > ? LIMIT 1`,
         [stationId, sinceSql],
       )

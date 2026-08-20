@@ -183,3 +183,65 @@ consumerAuthRouter.patch('/me', requireConsumerAuth, async (req, res) => {
   )
   res.json({ consumer: mapConsumer((rows as ConsumerRow[])[0]) })
 })
+
+consumerAuthRouter.post('/change-password', requireConsumerAuth, async (req, res) => {
+  const currentPassword =
+    typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : ''
+  const newPassword =
+    typeof req.body?.newPassword === 'string' ? req.body.newPassword : ''
+
+  if (!currentPassword || !newPassword) {
+    res.status(400).json({
+      error: 'validation_error',
+      message: 'currentPassword and newPassword are required',
+    })
+    return
+  }
+  if (newPassword.length < 6) {
+    res.status(400).json({
+      error: 'validation_error',
+      message: 'newPassword must be at least 6 characters',
+    })
+    return
+  }
+  if (currentPassword === newPassword) {
+    res.status(400).json({
+      error: 'validation_error',
+      message: 'New password must be different from the current password',
+    })
+    return
+  }
+
+  try {
+    const [rows] = await getPool().query<ConsumerRow[]>(
+      `SELECT id, email, password_hash, name, phone
+       FROM consumer_users WHERE id = ? LIMIT 1`,
+      [req.consumer!.id],
+    )
+    const user = (rows as ConsumerRow[])[0]
+    if (!user) {
+      res.status(401).json({ error: 'unauthorized', message: 'Account not found' })
+      return
+    }
+
+    const ok = await bcrypt.compare(currentPassword, user.password_hash)
+    if (!ok) {
+      res.status(401).json({
+        error: 'unauthorized',
+        message: 'Current password is incorrect',
+      })
+      return
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS)
+    await getPool().query(
+      `UPDATE consumer_users SET password_hash = ?, updated_at = UTC_TIMESTAMP(3)
+       WHERE id = ?`,
+      [passwordHash, user.id],
+    )
+    res.json({ ok: true })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'server_error', message: 'Could not update password' })
+  }
+})

@@ -251,13 +251,14 @@ riderAppRouter.post('/orders/:orderId/complete', async (req, res) => {
   const sid = stationId(req)
   const riderId = req.auth!.riderId!
   const orderId = String(req.params.orderId ?? '').trim()
-  const payment = req.body?.payment
+  const payment =
+    typeof req.body?.payment === 'string' ? req.body.payment.trim().slice(0, 32) : ''
   if (!orderId) {
     badRequest(res, 'orderId is required')
     return
   }
-  if (payment !== 'Cash' && payment !== 'GCash' && payment !== 'Maya' && payment !== 'Utang') {
-    badRequest(res, 'payment must be Cash, GCash, Maya, or Utang')
+  if (!payment) {
+    badRequest(res, 'payment is required')
     return
   }
 
@@ -288,12 +289,20 @@ riderAppRouter.post('/orders/:orderId/complete', async (req, res) => {
   }
 
   const payMode = open[0]?.pay_mode || all[0]?.pay_mode || ''
-  if ((payMode === 'GCash' || payMode === 'Maya') && payment !== payMode) {
-    badRequest(res, `This order was prepaid with ${payMode}`)
+  const prepaid = Boolean(payMode) && payMode !== 'Cash'
+  if (prepaid) {
+    if (payment !== payMode) {
+      badRequest(res, `This order was prepaid with ${payMode}`)
+      return
+    }
+  } else if (
+    payment !== 'Cash' &&
+    payment !== 'GCash' &&
+    payment !== 'Maya' &&
+    payment !== 'Utang'
+  ) {
+    badRequest(res, 'payment must be Cash, GCash, Maya, or Utang')
     return
-  }
-  if (payMode === 'Cash' && payment !== 'Cash' && payment !== 'Utang') {
-    // COD: allow Cash (collect) or Utang if station wants — keep Utang for flexibility
   }
 
   const conn = await getPool().getConnection()

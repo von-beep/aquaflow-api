@@ -98,7 +98,8 @@ publicOrdersRouter.post(
     const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : ''
     const address = typeof req.body?.address === 'string' ? req.body.address.trim() : ''
     const noteRaw = typeof req.body?.note === 'string' ? req.body.note.trim() : ''
-    const payModeRaw = typeof req.body?.payMode === 'string' ? req.body.payMode.trim() : 'Cash'
+    const payModeRaw =
+      typeof req.body?.payMode === 'string' ? req.body.payMode.trim().slice(0, 32) : 'Cash'
     const paymentProof =
       typeof req.body?.paymentProof === 'string' ? req.body.paymentProof.trim() : ''
     // Legacy: old clients sent paymentReference; prefer screenshot when present.
@@ -109,25 +110,6 @@ publicOrdersRouter.post(
       res.status(400).json({
         error: 'bad_request',
         message: 'customerName, phone, and address are required',
-      })
-      return
-    }
-    const payMode =
-      payModeRaw === 'GCash' || payModeRaw === 'Maya' || payModeRaw === 'Cash'
-        ? payModeRaw
-        : ''
-    if (!payMode) {
-      res.status(400).json({
-        error: 'bad_request',
-        message: 'payMode must be Cash, GCash, or Maya',
-      })
-      return
-    }
-    const needsProof = payMode === 'GCash' || payMode === 'Maya'
-    if (needsProof && !paymentProof && !paymentReference) {
-      res.status(400).json({
-        error: 'bad_request',
-        message: 'Payment screenshot is required for GCash and Maya',
       })
       return
     }
@@ -158,6 +140,40 @@ publicOrdersRouter.post(
       if (!station) {
         res.status(404).json({ error: 'not_found', message: 'Station not found' })
         return
+      }
+
+      let payMode = ''
+      let needsProof = false
+      if (payModeRaw === 'Cash' || payModeRaw === '') {
+        payMode = 'Cash'
+        needsProof = false
+      } else {
+        const [methodRows] = await conn.query<RowDataPacket[]>(
+          `SELECT name FROM station_payment_methods
+           WHERE station_id = ?
+             AND name = ?
+             AND qr_path IS NOT NULL
+             AND qr_path <> ''
+           LIMIT 1`,
+          [station.id, payModeRaw],
+        )
+        const method = (methodRows as RowDataPacket[])[0]
+        if (!method) {
+          res.status(400).json({
+            error: 'bad_request',
+            message: 'payMode must be Cash or an available online payment method for this station',
+          })
+          return
+        }
+        payMode = String(method.name)
+        needsProof = true
+        if (!paymentProof && !paymentReference) {
+          res.status(400).json({
+            error: 'bad_request',
+            message: `Payment screenshot is required for ${payMode}`,
+          })
+          return
+        }
       }
 
       const products: ProductRow[] = []

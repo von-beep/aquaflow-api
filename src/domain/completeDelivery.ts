@@ -4,7 +4,8 @@ import { uid } from '../lib/ids.js'
 
 export type CompleteDeliveryInput = {
   deliveryId: string
-  payment: 'Cash' | 'GCash' | 'Maya' | 'Utang'
+  /** Cash / GCash / Maya / Utang, or a station online method name when prepaid. */
+  payment: string
   fullOut: number
   emptyIn: number
   productName: string

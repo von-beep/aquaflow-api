@@ -253,13 +253,15 @@ async function upsertSettings(
   const lat = parseCoord(data.lat)
   const lng = parseCoord(data.lng)
   await conn.query(
-    `INSERT INTO settings (station_id, station_name, owner, phone, address, lat, lng, currency, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO settings (station_id, station_name, owner, phone, address, lat, lng, currency, open_time, close_time, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        station_name = VALUES(station_name), owner = VALUES(owner),
        phone = VALUES(phone), address = VALUES(address),
        lat = VALUES(lat), lng = VALUES(lng),
        currency = VALUES(currency),
+       open_time = VALUES(open_time),
+       close_time = VALUES(close_time),
        updated_at = VALUES(updated_at)`,
     [
       stationId,
@@ -270,6 +272,12 @@ async function upsertSettings(
       lat,
       lng,
       String(data.currency ?? '₱'),
+      typeof data.openTime === 'string' && data.openTime
+        ? `${String(data.openTime).slice(0, 5)}:00`
+        : null,
+      typeof data.closeTime === 'string' && data.closeTime
+        ? `${String(data.closeTime).slice(0, 5)}:00`
+        : null,
       sqlTs(updatedAt),
     ],
   )

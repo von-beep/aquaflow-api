@@ -51,7 +51,8 @@ export async function completeOrderDeliveriesDb(
   stationId: string,
   orderId: string,
   input: {
-    payment: 'Cash' | 'GCash' | 'Maya' | 'Utang'
+    /** Cash / GCash / Maya / Utang, or prepaid online method name. */
+    payment: string
     productNames: Record<string, string>
   },
 ): Promise<{ toast: string; completed: number } | null> {

@@ -1,11 +1,14 @@
 import bcrypt from 'bcrypt'
+import { timingSafeEqual } from 'node:crypto'
 import { Router } from 'express'
-import type { RowDataPacket } from 'mysql2'
+import type { ResultSetHeader, RowDataPacket } from 'mysql2'
 import { getPool } from '../db/pool.js'
 import { toDateOnlyString } from '../lib/dates.js'
 import { JWT_EXPIRES_IN, signToken } from '../lib/jwt.js'
 import { requireAuth } from '../middleware/auth.js'
 import { createStationWithOwner } from '../platform/createStation.js'
+import { ensurePlatformStation } from '../platform/ensurePlatformStation.js'
+import { PLATFORM_STATION_ID } from '../platform/planRestore.js'
 
 type UserRow = RowDataPacket & {
   id: string
@@ -17,7 +20,129 @@ type UserRow = RowDataPacket & {
   is_platform_admin: number
 }
 
+function uid(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+}
+
+function secretsMatch(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided)
+  const b = Buffer.from(expected)
+  if (a.length !== b.length) return false
+  return timingSafeEqual(a, b)
+}
+
 export const authRouter = Router()
+
+/**
+ * Register a platform admin (ops) user. Requires PLATFORM_REGISTER_SECRET in env.
+ * Does not create a tenant station.
+ */
+authRouter.post('/platform/register', async (req, res) => {
+  const expected = (process.env.PLATFORM_REGISTER_SECRET ?? '').trim()
+  if (!expected) {
+    res.status(503).json({
+      error: 'unavailable',
+      message: 'Platform registration is not configured',
+    })
+    return
+  }
+
+  const secretCode =
+    typeof req.body?.secretCode === 'string' ? req.body.secretCode : ''
+  const email =
+    typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : ''
+  const password = typeof req.body?.password === 'string' ? req.body.password : ''
+
+  if (!secretsMatch(secretCode, expected)) {
+    res.status(403).json({
+      error: 'forbidden',
+      message: 'Invalid registration code',
+    })
+    return
+  }
+
+  if (!email || !password) {
+    res.status(400).json({
+      error: 'validation_error',
+      message: 'email and password are required',
+    })
+    return
+  }
+  if (password.length < 8) {
+    res.status(400).json({
+      error: 'validation_error',
+      message: 'password must be at least 8 characters',
+    })
+    return
+  }
+
+  const pool = getPool()
+  try {
+    await ensurePlatformStation(pool)
+
+    const [existing] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM users WHERE email = ? LIMIT 1`,
+      [email],
+    )
+    if ((existing as RowDataPacket[])[0]) {
+      res.status(409).json({
+        error: 'conflict',
+        message: 'Email already in use',
+      })
+      return
+    }
+
+    const userId = uid()
+    const hash = await bcrypt.hash(password, 10)
+    await pool.query<ResultSetHeader>(
+      `INSERT INTO users (id, station_id, email, password_hash, role, is_platform_admin)
+       VALUES (?, ?, ?, ?, 'owner', 1)`,
+      [userId, PLATFORM_STATION_ID, email, hash],
+    )
+
+    const [stationRows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, name, slug, plan_status, trial_ends_at, phone FROM stations WHERE id = ? LIMIT 1`,
+      [PLATFORM_STATION_ID],
+    )
+    const station = (stationRows as RowDataPacket[])[0]
+    if (!station) {
+      res.status(500).json({
+        error: 'server_error',
+        message: 'Platform station missing',
+      })
+      return
+    }
+
+    const token = signToken({
+      sub: userId,
+      stationId: PLATFORM_STATION_ID,
+      role: 'owner',
+    })
+    res.status(201).json({
+      token,
+      expiresIn: JWT_EXPIRES_IN,
+      user: {
+        id: userId,
+        email,
+        role: 'owner',
+        stationId: PLATFORM_STATION_ID,
+        riderId: null,
+        isPlatformAdmin: true,
+      },
+      station: {
+        id: station.id,
+        name: station.name,
+        slug: station.slug,
+        planStatus: station.plan_status,
+        phone: station.phone ?? '',
+        trialEndsAt: toDateOnlyString(station.trial_ends_at),
+      },
+    })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'server_error', message: 'Registration failed' })
+  }
+})
 
 /** Public self-serve signup kept for API clients; primary UX is platform create. */
 authRouter.post('/register', async (req, res) => {

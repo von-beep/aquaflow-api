@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import type { RowDataPacket } from 'mysql2'
 import { getPool } from '../db/pool.js'
-import { qrPhPublicPath } from '../lib/qrph.js'
+import { parseHm } from '../lib/hours.js'
+import { paymentQrPublicPath } from '../lib/qrph.js'
 import { PLATFORM_STATION_ID } from '../platform/planRestore.js'
 
 type StationRow = RowDataPacket & {
@@ -12,7 +13,16 @@ type StationRow = RowDataPacket & {
   address: string
   lat: number | string | null
   lng: number | string | null
-  qrph_path?: string | null
+  open_time?: unknown
+  close_time?: unknown
+}
+
+type MethodRow = RowDataPacket & {
+  id: string
+  name: string
+  slug: string
+  qr_path: string | null
+  sort_order: number
 }
 
 function parseCoord(value: unknown): number | null {
@@ -30,7 +40,8 @@ function mapStation(r: StationRow) {
     address: r.address ?? '',
     lat: parseCoord(r.lat),
     lng: parseCoord(r.lng),
-    qrPhUrl: qrPhPublicPath(r.qrph_path ?? null),
+    openTime: parseHm(r.open_time ?? null),
+    closeTime: parseHm(r.close_time ?? null),
   }
 }
 
@@ -42,7 +53,8 @@ type ProductRow = RowDataPacket & {
 
 type SettingsRow = RowDataPacket & {
   currency: string
-  qrph_path: string | null
+  open_time: unknown
+  close_time: unknown
 }
 
 /**
@@ -54,7 +66,8 @@ export const publicCatalogRouter = Router()
 publicCatalogRouter.get('/stations', async (_req, res) => {
   try {
     const [rows] = await getPool().query<StationRow[]>(
-      `SELECT s.id, s.name, s.slug, s.phone, s.address, s.lat, s.lng, st.qrph_path
+      `SELECT s.id, s.name, s.slug, s.phone, s.address, s.lat, s.lng,
+              st.open_time, st.close_time
        FROM stations s
        LEFT JOIN settings st ON st.station_id = s.id
        WHERE s.id <> ?
@@ -80,8 +93,10 @@ publicCatalogRouter.get('/stations/:idOrSlug/products', async (req, res) => {
 
   try {
     const [stationRows] = await getPool().query<StationRow[]>(
-      `SELECT s.id, s.name, s.slug, s.phone, s.address, s.lat, s.lng
+      `SELECT s.id, s.name, s.slug, s.phone, s.address, s.lat, s.lng,
+              st.open_time, st.close_time
        FROM stations s
+       LEFT JOIN settings st ON st.station_id = s.id
        WHERE (s.id = ? OR s.slug = ?)
          AND s.id <> ?
          AND s.plan_status <> 'suspended'
@@ -94,9 +109,9 @@ publicCatalogRouter.get('/stations/:idOrSlug/products', async (req, res) => {
       return
     }
 
-    const [settingsResult, productsResult] = await Promise.all([
+    const [settingsResult, productsResult, methodsResult] = await Promise.all([
       getPool().query<SettingsRow[]>(
-        `SELECT currency, qrph_path FROM settings WHERE station_id = ? LIMIT 1`,
+        `SELECT currency, open_time, close_time FROM settings WHERE station_id = ? LIMIT 1`,
         [station.id],
       ),
       getPool().query<ProductRow[]>(
@@ -106,20 +121,40 @@ publicCatalogRouter.get('/stations/:idOrSlug/products', async (req, res) => {
          ORDER BY name`,
         [station.id],
       ),
+      getPool().query<MethodRow[]>(
+        `SELECT id, name, slug, qr_path, sort_order
+         FROM station_payment_methods
+         WHERE station_id = ? AND qr_path IS NOT NULL AND qr_path <> ''
+         ORDER BY sort_order ASC, name ASC`,
+        [station.id],
+      ),
     ])
 
     const settingsRows = settingsResult[0] as SettingsRow[]
     const productRows = productsResult[0] as ProductRow[]
+    const methodRows = methodsResult[0] as MethodRow[]
     const currency = settingsRows[0]?.currency?.trim() || '₱'
-    const qrphPath = settingsRows[0]?.qrph_path ?? null
+    const settingsHours = settingsRows[0]
+    const stationWithHours = {
+      ...station,
+      open_time: settingsHours?.open_time ?? station.open_time,
+      close_time: settingsHours?.close_time ?? station.close_time,
+    }
 
     res.json({
-      station: mapStation({ ...station, qrph_path: qrphPath }),
+      station: mapStation(stationWithHours),
       currency,
       products: productRows.map((r) => ({
         id: r.id,
         name: r.name,
         price: Number(r.price),
+      })),
+      /** Online methods with QR uploaded — Cash is always available separately. */
+      paymentMethods: methodRows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        slug: r.slug,
+        qrUrl: paymentQrPublicPath(r.qr_path),
       })),
     })
   } catch (err) {

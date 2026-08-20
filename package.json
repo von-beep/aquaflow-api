@@ -12,6 +12,7 @@
     "migrate": "tsx src/db/migrate.ts",
     "migrate:prod": "node dist/db/migrate.js",
     "seed": "tsx src/db/seed.ts",
+    "seed:prod": "node dist/db/seed.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },

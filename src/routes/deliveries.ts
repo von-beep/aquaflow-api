@@ -306,12 +306,36 @@ deliveriesRouter.patch('/orders/:orderId', async (req, res) => {
 deliveriesRouter.post('/orders/:orderId/complete', async (req, res) => {
   const sid = stationId(req)
   const orderId = String(req.params.orderId ?? '').trim()
-  const payment = req.body?.payment
+  const payment =
+    typeof req.body?.payment === 'string' ? req.body.payment.trim().slice(0, 32) : ''
   if (!orderId) {
     badRequest(res, 'orderId is required')
     return
   }
-  if (payment !== 'Cash' && payment !== 'GCash' && payment !== 'Maya' && payment !== 'Utang') {
+  if (!payment) {
+    badRequest(res, 'payment is required')
+    return
+  }
+
+  const [modeRows] = await getPool().query<RowDataPacket[]>(
+    `SELECT pay_mode FROM deliveries
+     WHERE order_id = ? AND station_id = ? AND deleted_at IS NULL
+     LIMIT 1`,
+    [orderId, sid],
+  )
+  const payMode = String((modeRows as RowDataPacket[])[0]?.pay_mode ?? '')
+  const prepaid = Boolean(payMode) && payMode !== 'Cash'
+  if (prepaid) {
+    if (payment !== payMode) {
+      badRequest(res, `This order was prepaid with ${payMode}`)
+      return
+    }
+  } else if (
+    payment !== 'Cash' &&
+    payment !== 'GCash' &&
+    payment !== 'Maya' &&
+    payment !== 'Utang'
+  ) {
     badRequest(res, 'payment must be Cash, GCash, Maya, or Utang')
     return
   }

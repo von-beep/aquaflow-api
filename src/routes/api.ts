@@ -7,6 +7,7 @@ import { customersRouter } from './customers.js'
 import { deliveriesRouter } from './deliveries.js'
 import { inventoryRouter } from './inventory.js'
 import { invitesRouter } from './invites.js'
+import { paymentMethodsRouter } from './paymentMethods.js'
 import { paymentsRouter } from './payments.js'
 import { productsRouter } from './products.js'
 import { riderAppRouter } from './riderApp.js'
@@ -37,6 +38,7 @@ apiRouter.use('/riders', ridersRouter)
 apiRouter.use('/deliveries', deliveriesRouter)
 apiRouter.use('/utang', utangRouter)
 apiRouter.use('/payments', paymentsRouter)
+apiRouter.use('/settings/payment-methods', paymentMethodsRouter)
 apiRouter.use('/settings', settingsRouter)
 apiRouter.use('/inventory', inventoryRouter)
 apiRouter.use('/sync', syncRouter)

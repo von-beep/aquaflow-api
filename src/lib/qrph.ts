@@ -14,18 +14,52 @@ const ALLOWED: Record<string, string> = {
   'image/webp': 'webp',
 }
 
-export function qrPhPublicPath(relativePath: string | null | undefined): string | null {
+/** @deprecated Fixed-slot era — prefer free-form slug strings. */
+export type PaymentQrMethod = 'gcash' | 'maya'
+
+export function isPaymentQrMethod(value: string): value is PaymentQrMethod {
+  return value === 'gcash' || value === 'maya'
+}
+
+export function sanitizePaymentSlug(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 32)
+}
+
+export function slugifyPaymentName(name: string): string {
+  return sanitizePaymentSlug(name)
+}
+
+/** Public URL for a stored QR path (legacy qrph/ or payment-qr/). */
+export function paymentQrPublicPath(
+  relativePath: string | null | undefined,
+): string | null {
   if (!relativePath || typeof relativePath !== 'string') return null
   const cleaned = relativePath.replace(/^\/+/, '').replace(/\.\./g, '')
-  if (!cleaned.startsWith('qrph/')) return null
+  if (!cleaned.startsWith('qrph/') && !cleaned.startsWith('payment-qr/')) {
+    return null
+  }
   return `/uploads/${cleaned}`
 }
 
-/** Parse a data URL and write to uploads/qrph/{stationId}.{ext}. Returns relative path. */
-export async function saveQrPhDataUrl(
+/** @deprecated Use paymentQrPublicPath */
+export function qrPhPublicPath(
+  relativePath: string | null | undefined,
+): string | null {
+  return paymentQrPublicPath(relativePath)
+}
+
+export async function savePaymentQrDataUrl(
   stationId: string,
+  methodSlug: string,
   dataUrl: string,
 ): Promise<string> {
+  const slug = sanitizePaymentSlug(methodSlug)
+  if (!slug) throw new Error('invalid_method')
+
   const m = /^data:(image\/(?:png|jpeg|jpg|webp));base64,(.+)$/i.exec(dataUrl.trim())
   if (!m) {
     throw new Error('invalid_image')
@@ -38,10 +72,9 @@ export async function saveQrPhDataUrl(
     throw new Error('image_too_large')
   }
 
-  const dir = path.join(UPLOADS_ROOT, 'qrph')
+  const dir = path.join(UPLOADS_ROOT, 'payment-qr', slug)
   await mkdir(dir, { recursive: true })
 
-  // Remove previous extensions for this station.
   for (const oldExt of Object.values(ALLOWED)) {
     try {
       await unlink(path.join(dir, `${stationId}.${oldExt}`))
@@ -50,20 +83,35 @@ export async function saveQrPhDataUrl(
     }
   }
 
-  const relative = `qrph/${stationId}.${ext}`
+  const relative = `payment-qr/${slug}/${stationId}.${ext}`
   await writeFile(path.join(UPLOADS_ROOT, relative), buf)
   return relative
 }
 
-export async function deleteQrPhFile(
+/** @deprecated Prefer savePaymentQrDataUrl(stationId, 'gcash', …) */
+export async function saveQrPhDataUrl(
+  stationId: string,
+  dataUrl: string,
+): Promise<string> {
+  return savePaymentQrDataUrl(stationId, 'gcash', dataUrl)
+}
+
+export async function deletePaymentQrFile(
   relativePath: string | null | undefined,
 ): Promise<void> {
   if (!relativePath) return
   const cleaned = relativePath.replace(/^\/+/, '').replace(/\.\./g, '')
-  if (!cleaned.startsWith('qrph/')) return
+  if (!cleaned.startsWith('qrph/') && !cleaned.startsWith('payment-qr/')) return
   try {
     await unlink(path.join(UPLOADS_ROOT, cleaned))
   } catch {
     /* ignore missing */
   }
+}
+
+/** @deprecated Use deletePaymentQrFile */
+export async function deleteQrPhFile(
+  relativePath: string | null | undefined,
+): Promise<void> {
+  return deletePaymentQrFile(relativePath)
 }

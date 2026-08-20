@@ -69,6 +69,93 @@ adminRouter.get('/stations', async (_req, res) => {
   res.json({ stations: (rows as StationListRow[]).map(mapStation) })
 })
 
+/** Station detail for ops: settings, products, riders (read-only). */
+adminRouter.get('/stations/:id', async (req, res) => {
+  const id = String(req.params.id ?? '')
+  if (!id) {
+    badRequest(res, 'Station id required')
+    return
+  }
+
+  const existing = await loadStation(id)
+  if (!existing) {
+    notFound(res, 'Station')
+    return
+  }
+
+  const pool = getPool()
+  try {
+    const [settingsRows] = await pool.query<RowDataPacket[]>(
+      `SELECT station_name, owner, phone, address, lat, lng, currency
+       FROM settings WHERE station_id = ? LIMIT 1`,
+      [id],
+    )
+    const settings = (settingsRows as RowDataPacket[])[0]
+
+    const [productRows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, name, price FROM products
+       WHERE station_id = ? AND deleted_at IS NULL
+       ORDER BY name`,
+      [id],
+    )
+
+    const [riderRows] = await pool.query<RowDataPacket[]>(
+      `SELECT r.id, r.name, r.phone, u.email AS account_email
+       FROM riders r
+       LEFT JOIN users u
+         ON u.rider_id = r.id AND u.station_id = r.station_id AND u.role = 'rider'
+       WHERE r.station_id = ? AND r.deleted_at IS NULL
+       ORDER BY r.name`,
+      [id],
+    )
+
+    const [ownerRows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, email, role FROM users
+       WHERE station_id = ? AND role IN ('owner', 'staff')
+       ORDER BY role = 'owner' DESC, email`,
+      [id],
+    )
+
+    const latRaw = settings?.lat
+    const lngRaw = settings?.lng
+    const lat = latRaw === null || latRaw === undefined || latRaw === '' ? null : Number(latRaw)
+    const lng = lngRaw === null || lngRaw === undefined || lngRaw === '' ? null : Number(lngRaw)
+
+    res.json({
+      station: mapStation(existing),
+      settings: {
+        stationName: String(settings?.station_name ?? existing.name ?? ''),
+        owner: String(settings?.owner ?? ''),
+        phone: String(settings?.phone ?? existing.phone ?? ''),
+        address: String(settings?.address ?? ''),
+        lat: Number.isFinite(lat) ? lat : null,
+        lng: Number.isFinite(lng) ? lng : null,
+        currency: String(settings?.currency ?? '₱'),
+      },
+      products: (productRows as RowDataPacket[]).map((p) => ({
+        id: String(p.id),
+        name: String(p.name),
+        price: Number(p.price),
+      })),
+      riders: (riderRows as RowDataPacket[]).map((r) => ({
+        id: String(r.id),
+        name: String(r.name),
+        phone: String(r.phone ?? ''),
+        email: r.account_email ? String(r.account_email) : null,
+        hasAccount: Boolean(r.account_email),
+      })),
+      users: (ownerRows as RowDataPacket[]).map((u) => ({
+        id: String(u.id),
+        email: String(u.email),
+        role: String(u.role),
+      })),
+    })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'server_error', message: 'Failed to load station' })
+  }
+})
+
 /** Create a new tenant station + owner (14-day trial). Does not return an owner JWT. */
 adminRouter.post('/stations', async (req, res) => {
   const stationName =
